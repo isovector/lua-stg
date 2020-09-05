@@ -15,9 +15,9 @@ local function __isNullaryTyCon(ty)
   return type(ty) == "table"
 end
 
-local function __checkType(val, ty)
+local function checkType(val, ty)
   if not (__isPolyType(ty)) then
-    assert(val._type == ty, tostring(val) .. " does not have ty " .. tostring(ty))
+    assert(val._type == ty, tostring(val) .. " does not have type " .. tostring(ty))
   end
 end
 
@@ -33,31 +33,6 @@ local function __freeze(name, table, also)
   end
 
   setmetatable(table, t)
-end
-
--- Types are brittle as shit; there is no unification, only a sorta hacked in
--- version of type propagation.
-local function __mkType(name, vars)
-  local tycon = {name = name, vars = vars}
-  __TYCONS[name] = {_tycon = tycon, _vars = vars, _cons = {}}
-
-  if isEmpty(vars) then
-    _G[name] = tycon
-  else
-    _G[name] = function(args)
-      assert(#args == #vars, "wrong arity for ty constructor " .. name)
-      local ty = {_tycon = tycon, _args = args}
-      __freeze("", ty,
-        { __eq = eqTy
-        , __tostring = function(t)
-            return name .. " " .. table.concat(map(tostring, t._args))
-          end})
-      return ty
-    end
-  end
-
-  __freeze(name .. " " .. table.concat(vars, " "), tycon)
-  return tycon
 end
 
 local function eqTy(v1, v2)
@@ -76,6 +51,32 @@ local function eqVal(v1, v2)
     if v1[k] ~= v2[k] then return false end
   end
   return true
+end
+
+-- Types are brittle as shit; there is no unification, only a sorta hacked in
+-- version of type propagation.
+local function __mkType(name, vars)
+  local tycon = {name = name, vars = vars}
+  __TYCONS[name] = {_tycon = tycon, _vars = vars, _cons = {}}
+
+  if isEmpty(vars) then
+    _G[name] = tycon
+  else
+    _G[name] = function(...)
+      local args = {...}
+      assert(#args == #vars, "wrong arity for ty constructor " .. name)
+      local ty = {_tycon = tycon, _args = args}
+      __freeze("", ty,
+        { __eq = eqTy
+        , __tostring = function(t)
+            return name .. " " .. table.concat(map(tostring, t._args))
+          end})
+      return ty
+    end
+  end
+
+  __freeze(name .. " " .. table.concat(vars, " "), tycon)
+  return tycon
 end
 
 local function __instantiate(typename, ty, insts)
@@ -114,7 +115,7 @@ local function __mkCon(name, fields, typename)
       -- TODO(sandy): check that all variables are the same
       -- print(showT(insts))
       for field_name, field_type in pairs(fields) do
-        __checkType(args[field_name], field_type)
+        checkType(args[field_name], field_type)
       end
       val._type = __instantiate(typename, ty, insts)
       __freeze(name .. " " .. showT(val, isExternalField), val, {__eq = eqVal})
@@ -139,5 +140,6 @@ end
 
 return
   { data = data
+  , checkType = checkType
   }
 
